@@ -16,6 +16,7 @@ from datetime import datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 
 import aiohttp
 from yarl import URL
@@ -1008,7 +1009,7 @@ class Hindsight:
         if enable_reranking is not None:
             body["enable_reranking"] = enable_reranking
 
-        url = f"{self._base_url}/v1/default/banks/{bank_id}"
+        url = f"{self._base_url}/v1/default/banks/{quote(bank_id, safe='')}"
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         async with aiohttp.ClientSession() as session:
             async with session.put(
@@ -2732,7 +2733,7 @@ class Hindsight:
         return await self._aget_bank_config(bank_id)
 
     async def _aget_bank_config(self, bank_id: str) -> dict[str, Any]:
-        url = f"{self._base_url}/v1/default/banks/{bank_id}/config"
+        url = f"{self._base_url}/v1/default/banks/{quote(bank_id, safe='')}/config"
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=self._timeout)) as resp:
@@ -3071,7 +3072,7 @@ class Hindsight:
         return await self._aupdate_bank_config(bank_id, updates)
 
     async def _aupdate_bank_config(self, bank_id: str, updates: dict[str, Any]) -> dict[str, Any]:
-        url = f"{self._base_url}/v1/default/banks/{bank_id}/config"
+        url = f"{self._base_url}/v1/default/banks/{quote(bank_id, safe='')}/config"
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         async with aiohttp.ClientSession() as session:
             async with session.patch(
@@ -3103,7 +3104,7 @@ class Hindsight:
         return await self._areset_bank_config(bank_id)
 
     async def _areset_bank_config(self, bank_id: str) -> dict[str, Any]:
-        url = f"{self._base_url}/v1/default/banks/{bank_id}/config"
+        url = f"{self._base_url}/v1/default/banks/{quote(bank_id, safe='')}/config"
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         async with aiohttp.ClientSession() as session:
             async with session.delete(url, headers=headers, timeout=aiohttp.ClientTimeout(total=self._timeout)) as resp:
