@@ -142,18 +142,21 @@ export function createKnowledgeTools(opts: CreateKnowledgeToolsOptions): Knowled
       async execute() {
         // The endpoint now defaults to one page. The tool promises the full
         // catalog, so read successive bounded pages rather than silently
-        // dropping models past the first 100. The wrapper also rejects errors
-        // on any page, instead of reporting an incomplete catalog as success.
+        // dropping models past the first 100. Use the generated SDK directly:
+        // the declared ^0.6.2 wrapper silently drops these query options.
         const items = [];
         const limit = 100;
         for (let offset = 0; ; offset += limit) {
-          const page = await client.listMentalModels(bankId, {
-            detail: "metadata",
-            limit,
-            offset,
+          const resp = await sdk.listMentalModels({
+            client: lowLevel,
+            path: { bank_id: bankId },
+            query: { detail: "metadata", limit, offset },
           });
-          items.push(...page.items);
-          if (page.items.length < limit) break;
+          if (resp.error || !resp.data) {
+            throw new Error(`agent_knowledge_list_pages failed: ${JSON.stringify(resp.error)}`);
+          }
+          items.push(...resp.data.items);
+          if (resp.data.items.length < limit) break;
         }
         return ok({ items });
       },

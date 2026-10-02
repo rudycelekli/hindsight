@@ -10,12 +10,13 @@ describe("list all knowledge pages", () => {
       name: `Page ${index}`,
     }));
     const offsets: number[] = [];
+    const details: Array<string | null> = [];
     const server = createServer((request, response) => {
       const url = new URL(request.url!, "http://localhost");
       const offset = Number(url.searchParams.get("offset") ?? 0);
       const limit = Number(url.searchParams.get("limit") ?? 100);
       offsets.push(offset);
-      expect(url.searchParams.get("detail")).toBe("metadata");
+      details.push(url.searchParams.get("detail"));
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
         JSON.stringify({
@@ -38,6 +39,7 @@ describe("list all knowledge pages", () => {
       const result = JSON.parse((await tool.execute({})).content[0].text);
       expect(result.items).toEqual(items);
       expect(offsets).toEqual([0, 100, 200]);
+      expect(details).toEqual(["metadata", "metadata", "metadata"]);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))
