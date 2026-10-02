@@ -140,12 +140,22 @@ export function createKnowledgeTools(opts: CreateKnowledgeToolsOptions): Knowled
         "List all your knowledge pages (IDs and names only). Use agent_knowledge_get_page to read the full content of a specific page.",
       parameters: { type: "object", properties: {} },
       async execute() {
-        const resp = await sdk.listMentalModels({
-          client: lowLevel,
-          path: { bank_id: bankId },
-          query: { detail: "metadata" },
-        });
-        return ok(resp.data);
+        // The endpoint now defaults to one page. The tool promises the full
+        // catalog, so read successive bounded pages rather than silently
+        // dropping models past the first 100. The wrapper also rejects errors
+        // on any page, instead of reporting an incomplete catalog as success.
+        const items = [];
+        const limit = 100;
+        for (let offset = 0; ; offset += limit) {
+          const page = await client.listMentalModels(bankId, {
+            detail: "metadata",
+            limit,
+            offset,
+          });
+          items.push(...page.items);
+          if (page.items.length < limit) break;
+        }
+        return ok({ items });
       },
     },
     {
@@ -206,6 +216,9 @@ export function createKnowledgeTools(opts: CreateKnowledgeToolsOptions): Knowled
             trigger: PAGE_DEFAULTS,
           },
         });
+        if (resp.error) {
+          throw new Error(`agent_knowledge_create_page failed: ${JSON.stringify(resp.error)}`);
+        }
         return ok(resp.data);
       },
     },
