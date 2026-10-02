@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { describe, it, expect, vi } from "vitest";
-import { HindsightClient as ApiClient } from "@vectorize-io/hindsight-client";
+import { HindsightClient as ApiClient } from "../../../../hindsight-clients/typescript/src/index.js";
 import { createHindsightTools } from "./index.js";
 
 // The API defaults to metadata; content must be requested explicitly even
