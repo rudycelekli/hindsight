@@ -18,6 +18,7 @@ import logging
 import threading
 import time
 from collections import OrderedDict
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from .db_utils import acquire_with_retry
@@ -73,12 +74,12 @@ class BankStatsCache:
             return None
         # Mark as recently used for LRU eviction.
         self._entries.move_to_end(key)
-        return value
+        return deepcopy(value)
 
     def _store_unlocked(self, key: tuple[str, str], value: dict[str, Any]) -> None:
         if not self.enabled:
             return
-        self._entries[key] = (self._now() + self._ttl, value)
+        self._entries[key] = (self._now() + self._ttl, deepcopy(value))
         self._entries.move_to_end(key)
         if self._max_entries:
             while len(self._entries) > self._max_entries:
@@ -95,7 +96,9 @@ class BankStatsCache:
         """Return cached stats for `(schema, bank_id)` or call `loader()`.
 
         Concurrent misses on the same key are coalesced onto a single
-        in-flight loader. When ``force_refresh`` is set the cached value is
+        in-flight loader. Cached JSON payloads and each caller's result own
+        separate nested data, so caller mutations cannot change another read.
+        When ``force_refresh`` is set the cached value is
         ignored: the loader runs and its result replaces the cached entry.
         """
         if not self.enabled:
@@ -112,7 +115,7 @@ class BankStatsCache:
                 # loader on another loop overwrite the force-refreshed value later.
                 for flight_key in [fk for fk in self._in_flight if fk[1] == key]:
                     self._in_flight.pop(flight_key, None)
-            return value
+            return deepcopy(value)
 
         with self._lock:
             cached = self._get_fresh_unlocked(key)
@@ -128,7 +131,7 @@ class BankStatsCache:
                 is_owner = False
 
         if not is_owner:
-            return await asyncio.shield(in_flight)
+            return deepcopy(await asyncio.shield(in_flight))
 
         try:
             value = await loader()
@@ -154,8 +157,8 @@ class BankStatsCache:
                 self._store_unlocked(key, value)
                 self._in_flight.pop(flight_key, None)
         if not in_flight.done():
-            in_flight.set_result(value)
-        return value
+            in_flight.set_result(deepcopy(value))
+        return deepcopy(value)
 
     async def invalidate(self, schema: str, bank_id: str) -> None:
         """Drop any cached stats for `(schema, bank_id)`."""
