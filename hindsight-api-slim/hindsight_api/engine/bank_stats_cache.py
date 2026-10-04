@@ -45,6 +45,7 @@ class BankStatsCache:
         # different event loop". Coalescing therefore happens within a loop; the cached
         # DATA below is still shared across all of them, which is the part worth having.
         self._in_flight: dict[tuple[object, tuple[str, str]], asyncio.Future[dict[str, Any]]] = {}
+        self._refreshes: dict[tuple[object, tuple[str, str]], object] = {}
         # A threading.Lock, not an asyncio.Lock: it is loop-agnostic, and every
         # critical section it guards is await-free (plain dict work), so it is never
         # held across a suspension point and cannot block a loop.
@@ -104,14 +105,28 @@ class BankStatsCache:
         key = (schema, bank_id)
 
         if force_refresh:
-            value = await loader()
+            flight_key = self._flight_key(key)
+            refresh_token = object()
             with self._lock:
-                self._store_unlocked(key, value)
-                # Supersede every loader that was in flight for this key. Flights
-                # are loop-scoped, so removing only this loop's slot lets an older
-                # loader on another loop overwrite the force-refreshed value later.
-                for flight_key in [fk for fk in self._in_flight if fk[1] == key]:
-                    self._in_flight.pop(flight_key, None)
+                # A newer refresh supersedes older refreshes across all loops.
+                for fk in [fk for fk in self._refreshes if fk[1] == key]:
+                    self._refreshes.pop(fk, None)
+                self._refreshes[flight_key] = refresh_token
+            try:
+                value = await loader()
+            except BaseException:
+                with self._lock:
+                    if self._refreshes.get(flight_key) is refresh_token:
+                        self._refreshes.pop(flight_key, None)
+                raise
+            with self._lock:
+                # Invalidation/clear may have detached this refresh while it awaited.
+                if self._refreshes.get(flight_key) is refresh_token:
+                    self._store_unlocked(key, value)
+                    self._refreshes.pop(flight_key, None)
+                    # Supersede every ordinary loader that was in flight for this key.
+                    for fk in [fk for fk in self._in_flight if fk[1] == key]:
+                        self._in_flight.pop(fk, None)
             return value
 
         with self._lock:
@@ -167,11 +182,14 @@ class BankStatsCache:
             # Every loop's slot for this key, since in-flight is scoped per loop.
             for flight_key in [fk for fk in self._in_flight if fk[1] == key]:
                 self._in_flight.pop(flight_key, None)
+            for flight_key in [fk for fk in self._refreshes if fk[1] == key]:
+                self._refreshes.pop(flight_key, None)
 
     async def clear(self) -> None:
         with self._lock:
             self._entries.clear()
             self._in_flight.clear()
+            self._refreshes.clear()
 
 
 class DistributedBankStatsCache:
