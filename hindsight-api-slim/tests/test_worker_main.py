@@ -4,6 +4,8 @@ import asyncio
 import signal
 from unittest.mock import MagicMock
 
+import pytest
+
 from hindsight_api.worker.main import _install_shutdown_signal_handlers
 
 
@@ -72,7 +74,9 @@ def test_main_bootstraps_tracing_for_the_worker_process(monkeypatch):
     assert bootstrap_calls == [{"default_service_name": "hindsight-worker"}]
 
 
-def test_main_warns_on_retired_flags_and_keeps_env_config(monkeypatch, capsys):
+def test_main_warns_on_retired_flags_and_keeps_env_config(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """--max-retries/--log-level never took effect; they still parse but only warn."""
     import dataclasses
     import sys
