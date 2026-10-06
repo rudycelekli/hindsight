@@ -5,7 +5,6 @@ from threading import Thread
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from hindsight_client import Hindsight
 from hindsight_client_api.models.reflect_request import ReflectRequest
 from hindsight_client_api.models.reflect_response import ReflectResponse
 
@@ -55,13 +54,12 @@ async def test_before_turn_reflects_through_actual_sdk() -> None:
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     reset_config()
-    client = Hindsight(base_url=f"http://127.0.0.1:{server.server_port}", timeout=2.0)
+    # The adapter builds its own SDK client from the URL, so the real client path is exercised.
+    adapter = HindsightRuntimeAdapter(
+        hindsight_api_url=f"http://127.0.0.1:{server.server_port}",
+        recall_policy=RecallPolicy(mode="reflect", budget="high", max_tokens=1234),
+    )
     try:
-        adapter = HindsightRuntimeAdapter(
-            hindsight_api_url=f"http://127.0.0.1:{server.server_port}",
-            recall_policy=RecallPolicy(mode="reflect", budget="high", max_tokens=1234),
-        )
-        adapter._client = client
         context = TurnContext(runtime_session_id="session", user_id="user", agent_name="agent")
         assert await adapter.before_turn(context, query="preferences") == "Synthesized project context"
         assert paths == ["/v1/default/banks/user:user:agent:agent/reflect"]
@@ -70,7 +68,8 @@ async def test_before_turn_reflects_through_actual_sdk() -> None:
         assert requests[0].budget == "high"
         assert requests[0].max_tokens == 1234
     finally:
-        await client.aclose()
+        if adapter._client is not None:
+            await adapter._client.aclose()
         reset_config()
         server.shutdown()
         server.server_close()
