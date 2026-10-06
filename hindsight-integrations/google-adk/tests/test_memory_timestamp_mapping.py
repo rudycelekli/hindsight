@@ -14,8 +14,18 @@ from hindsight_client_api.models.retain_response import RetainResponse
 from hindsight_google_adk import HindsightMemoryService
 
 
-@pytest.mark.parametrize("timestamp", ["2023-03-10T12:45:00Z", "2023-03-10T12:45:00+05:30", "unset", None])
-async def test_explicit_memory_preserves_timestamp(timestamp: str | None) -> None:
+@pytest.mark.parametrize(
+    ("timestamp", "expected"),
+    [
+        ("2023-03-10T12:45:00Z", datetime.fromisoformat("2023-03-10T12:45:00+00:00")),
+        ("2023-03-10T12:45:00+05:30", datetime.fromisoformat("2023-03-10T12:45:00+05:30")),
+        ("unset", "unset"),
+        (None, None),
+        # ADK allows free text here; the API would 422 and drop the memory, so it is retained undated.
+        ("March 10, 2023", None),
+    ],
+)
+async def test_explicit_memory_preserves_timestamp(timestamp: str | None, expected: datetime | str | None) -> None:
     retained: list[MemoryItem] = []
 
     async def retain(request: web.Request) -> web.Response:
@@ -45,5 +55,4 @@ async def test_explicit_memory_preserves_timestamp(timestamp: str | None) -> Non
     item = retained[0]
     assert item.document_id == "historical-memory"
     assert item.metadata["author"] == "user"
-    expected = datetime.fromisoformat(timestamp) if timestamp is not None and timestamp != "unset" else timestamp
     assert (item.timestamp.actual_instance if item.timestamp is not None else None) == expected
