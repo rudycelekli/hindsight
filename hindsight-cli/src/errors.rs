@@ -5,6 +5,17 @@ pub fn handle_api_error(err: anyhow::Error, api_url: &str) -> ! {
     std::process::exit(1);
 }
 
+/// Split "<what> failed (<status>): <body>" into its heading and body —
+/// `humanize_client_error` and the hand-rolled reqwest paths both use that
+/// shape. `None` when the text has no numeric status in that position.
+fn split_http_error(err_str: &str) -> Option<(&str, &str)> {
+    let (head, body) = err_str.split_once("): ")?;
+    let status = head.rsplit_once('(')?.1;
+    status
+        .starts_with(|c: char| c.is_ascii_digit())
+        .then_some((head, body))
+}
+
 /// Extract the server's own explanation from an error string produced by
 /// `humanize_client_error` ("API request failed (404 Not Found): {body}").
 ///
@@ -13,14 +24,7 @@ pub fn handle_api_error(err: anyhow::Error, api_url: &str) -> ! {
 /// surfaces this instead of discarding it: a self-explanatory server response
 /// beats generic guidance (see issues #2912, #4049).
 fn server_detail(err_str: &str) -> Option<String> {
-    // Errors carrying a body are shaped "<what> failed (<status>): <body>" —
-    // `humanize_client_error` and the hand-rolled reqwest paths both use it.
-    let (head, body) = err_str.split_once("): ")?;
-    let status = head.rsplit_once('(')?.1;
-    if !status.starts_with(|c: char| c.is_ascii_digit()) {
-        return None;
-    }
-    let body = body.trim();
+    let body = split_http_error(err_str)?.1.trim();
     if body.is_empty() {
         return None;
     }
@@ -51,13 +55,7 @@ fn format_error_message(err: &anyhow::Error, api_url: &str) -> String {
     let err_str = err.to_string();
     // Classify the failure heading, not server-provided response text: a body
     // can mention timeout, DNS or resource numbers without changing the status.
-    let error_heading = err_str
-        .split_once("): ")
-        .filter(|(head, _)| {
-            head.rsplit_once('(')
-                .is_some_and(|(_, status)| status.starts_with(|c: char| c.is_ascii_digit()))
-        })
-        .map_or(err_str.as_str(), |(head, _)| head);
+    let error_heading = split_http_error(&err_str).map_or(err_str.as_str(), |(head, _)| head);
 
     // Connection refused
     if error_heading.contains("Connection refused")
@@ -420,35 +418,37 @@ mod tests {
 
         assert!(message.contains("<html>nginx 404</html>"));
     }
-}
 
-#[cfg(test)]
-mod http_response_classification_tests {
-    use super::format_error_message;
     #[test]
-    fn forbidden_body_timeout_does_not_mask_http_status() {
-        let error=anyhow::anyhow!("API request failed (403 Forbidden): {{\"detail\":\"Permission denied: timeout override is not allowed\"}}");
-        let message = format_error_message(&error, "http://localhost:8888");
-        assert!(message.contains("Permission denied (403)"), "{message}");
-        assert!(
-            message.contains("timeout override is not allowed"),
-            "{message}"
+    fn http_403_body_that_mentions_timeout_keeps_the_403() {
+        let error = anyhow::anyhow!(
+            "API request failed (403 Forbidden): \
+             {{\"detail\":\"Permission denied: timeout override is not allowed\"}}"
         );
+
+        let message = format_error_message(&error, "http://localhost:8888");
+
+        assert!(message.contains("Permission denied (403)"), "{message}");
+        assert!(message.contains("timeout override is not allowed"));
         assert!(!message.contains("Request timed out"));
     }
+
     #[test]
-    fn server_error_body_resource_number_is_not_http_status() {
-        let error=anyhow::anyhow!("API request failed (500 Internal Server Error): {{\"detail\":\"Could not process document 404\"}}");
-        let message = format_error_message(&error, "http://localhost:8888");
-        assert!(message.contains("API server error"), "{message}");
-        assert!(
-            message.contains("Could not process document 404"),
-            "{message}"
+    fn http_500_body_that_mentions_404_keeps_the_500() {
+        let error = anyhow::anyhow!(
+            "API request failed (500 Internal Server Error): \
+             {{\"detail\":\"Could not process document 404\"}}"
         );
+
+        let message = format_error_message(&error, "http://localhost:8888");
+
+        assert!(message.contains("API server error"), "{message}");
+        assert!(message.contains("Could not process document 404"));
         assert!(!message.contains("Not found (404)"));
     }
+
     #[test]
-    fn transport_errors_without_http_bodies_keep_their_guidance() {
+    fn transport_errors_without_a_status_keep_their_guidance() {
         for (error, expected) in [
             ("request timeout", "Request timed out"),
             ("error sending request", "Cannot connect to Hindsight API"),
@@ -456,6 +456,7 @@ mod http_response_classification_tests {
             ("invalid URL", "Invalid API URL"),
         ] {
             let message = format_error_message(&anyhow::anyhow!(error), "http://localhost:8888");
+
             assert!(message.contains(expected), "{message}");
         }
     }
