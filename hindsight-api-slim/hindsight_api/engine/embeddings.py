@@ -1115,6 +1115,10 @@ class CohereEmbeddings(Embeddings):
     Supports embed-english-v3.0 (1024 dims) and embed-multilingual-v3.0 (1024 dims).
 
     The embedding dimension is auto-detected from the model at initialization.
+
+    Cohere's v3 models take the retrieval task as a request parameter (``input_type``),
+    so like ZeroEntropy this provider overrides encode_query()/encode_documents()
+    rather than prefixing text, and keeps encode() on the explicitly configured type.
     """
 
     # Known dimensions for Cohere embedding models
@@ -1237,8 +1241,14 @@ class CohereEmbeddings(Embeddings):
         """
         Generate embeddings using the Cohere API.
 
+        The task travels with the request instead of being read off ``self.input_type``:
+        recall and retain run concurrently against one provider instance, so swapping a
+        shared attribute per call would let a retain batch embed as a query, or worse.
+
         Args:
             texts: List of text strings to encode
+            input_type: Cohere retrieval task for this request (search_query,
+                search_document, classification, clustering)
 
         Returns:
             List of embedding vectors
