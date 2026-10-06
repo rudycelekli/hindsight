@@ -298,7 +298,6 @@ class Hindsight:
         # seeding the calling application does to the global `random` module.
         self._retry_rng = random.Random()
         self._base_url = base_url
-        self._api_key = api_key
         self._retain_suspended: ContextVar[bool] = ContextVar("retain_suspended", default=False)
         if api_key:
             self._api_client.set_default_header("Authorization", f"Bearer {api_key}")
