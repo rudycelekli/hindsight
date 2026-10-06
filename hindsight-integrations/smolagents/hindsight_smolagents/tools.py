@@ -260,11 +260,14 @@ def create_hindsight_tools(
         client: Pre-configured Hindsight client (preferred).
         hindsight_api_url: API URL (used if no client provided).
         api_key: API key (used if no client provided).
-        budget: Recall/reflect budget level (low/mid/high).
-        max_tokens: Maximum tokens for recall results.
+        budget: Recall/reflect budget level (low/mid/high). None uses the configured
+            budget, or "mid" when unconfigured.
+        max_tokens: Maximum tokens for recall results. None uses the configured
+            limit, or 4096 when unconfigured.
         tags: Tags applied when storing memories via retain.
         recall_tags: Tags to filter when searching memories.
-        recall_tags_match: Tag matching mode (any/all/any_strict/all_strict).
+        recall_tags_match: Tag matching mode (any/all/any_strict/all_strict). None uses
+            the configured mode, or "any" when unconfigured.
         enable_retain: Include the retain (store) tool.
         enable_recall: Include the recall (search) tool.
         enable_reflect: Include the reflect (synthesize) tool.
