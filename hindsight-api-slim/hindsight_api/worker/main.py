@@ -18,7 +18,7 @@ import sys
 import warnings
 from collections.abc import Callable
 
-from ..config import _get_raw_config, load_dotenv_for_entrypoint
+from ..config import get_config, load_dotenv_for_entrypoint
 from ..engine.task_backend import WorkerTaskBackend
 from .poller import WorkerPoller
 
@@ -171,7 +171,7 @@ def main():
     load_dotenv_for_entrypoint()
 
     # Load configuration from environment
-    config = _get_raw_config()
+    config = get_config()
 
     parser = argparse.ArgumentParser(
         prog="hindsight-worker",
@@ -190,12 +190,6 @@ def main():
         default=config.worker_poll_interval_ms,
         help=f"Poll interval in milliseconds (default: {config.worker_poll_interval_ms}, env: HINDSIGHT_API_WORKER_POLL_INTERVAL_MS)",
     )
-    parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=config.worker_max_retries,
-        help=f"Max retries before marking failed (default: {config.worker_max_retries}, env: HINDSIGHT_API_WORKER_MAX_RETRIES)",
-    )
 
     # HTTP server options
     parser.add_argument(
@@ -210,22 +204,21 @@ def main():
         help="HTTP host to bind (default: 0.0.0.0)",
     )
 
-    # Logging options
-    parser.add_argument(
-        "--log-level",
-        default=config.log_level,
-        choices=["critical", "error", "warning", "info", "debug", "trace"],
-        help=f"Log level (default: {config.log_level}, env: HINDSIGHT_API_LOG_LEVEL)",
-    )
+    # Retired: these only ever changed the startup banner, never the poller, the engine
+    # or logging. Still accepted so existing launch commands keep starting.
+    for retired_flag in ("--max-retries", "--log-level"):
+        parser.add_argument(retired_flag, default=None, help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
-    # Apply CLI overrides to the cached startup config before logging or engine creation.
-    # Previously the banner used args while the poller and execute_task read env defaults.
-    # The engine obtains its retry budget through get_config(), so changing only the
-    # poller's constructor would still leave task retries on the old budget.
-    config.worker_max_retries = args.max_retries
-    config.log_level = args.log_level
+    for flag, env_var, value in (
+        ("--max-retries", "HINDSIGHT_API_WORKER_MAX_RETRIES", args.max_retries),
+        ("--log-level", "HINDSIGHT_API_LOG_LEVEL", args.log_level),
+    ):
+        if value is not None:
+            print(f"{flag} {value} is ignored: set {env_var} instead.", file=sys.stderr)
+
+    # Configure logging
     config.configure_logging()
 
     # Initialize OpenTelemetry tracing if enabled. The worker runs consolidation,
@@ -248,7 +241,7 @@ def main():
 
     print(f"Starting Hindsight Worker: {worker_id}")
     print(f"  Poll interval: {args.poll_interval}ms")
-    print(f"  Max retries: {args.max_retries}")
+    print(f"  Max retries: {config.worker_max_retries}")
     print(f"  Max slots: {config.worker_max_slots}")
     reservations = config.worker_slot_reservations
     reservations_str = ", ".join(f"{k}={v}" for k, v in reservations.items()) if reservations else "none"
