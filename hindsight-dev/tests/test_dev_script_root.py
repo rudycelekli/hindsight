@@ -46,22 +46,16 @@ def test_dev_entrypoint_resolves_its_own_checkout(tmp_path: Path, caller: str, e
     bin_dir.mkdir()
     (bin_dir / "python3").symlink_to(sys.executable)
     calls = tmp_path / "calls.jsonl"
+    # Each stub appends one JSON line per call; the test parses them into RecordedCall.
     recorder = """#!/usr/bin/env python3
 import json, os, sys, time
-from dataclasses import dataclass, asdict
-@dataclass
-class RecordedCall:
-    command: str
-    args: list[str]
-    cwd: str
-    port: str | None
-    dataplane: str | None
 with open(os.environ['DEV_SCRIPT_CALLS'], 'a') as output:
-    call = RecordedCall(os.path.basename(sys.argv[0]), sys.argv[1:], os.getcwd(),
-                        os.environ.get('PORT'), os.environ.get('HINDSIGHT_CP_DATAPLANE_API_URL'))
-    output.write(json.dumps(asdict(call)) + '\\n')
+    output.write(json.dumps({'command': os.path.basename(sys.argv[0]), 'args': sys.argv[1:], 'cwd': os.getcwd(),
+                             'port': os.environ.get('PORT'),
+                             'dataplane': os.environ.get('HINDSIGHT_CP_DATAPLANE_API_URL')}) + '\\n')
 if os.path.basename(sys.argv[0]) == 'npm' and 'dev' in sys.argv:
     open(os.environ['DEV_SCRIPT_DONE'], 'w').close()
+# Keep the fake API alive until the control plane starts, else start.sh exits early.
 if os.path.basename(sys.argv[0]) == 'uv':
     deadline = time.monotonic() + 5
     while not os.path.exists(os.environ['DEV_SCRIPT_DONE']) and time.monotonic() < deadline:
